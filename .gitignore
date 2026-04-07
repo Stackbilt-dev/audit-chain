@@ -4,3 +4,8 @@ dist/
 *.tsbuildinfo
 .env
 .dev.vars
+# cc-taskrunner worktree protection
+C:*
+node_modules/
+.pnpm-store/
+__pycache__/
