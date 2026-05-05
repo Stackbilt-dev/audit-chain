@@ -177,6 +177,54 @@ Low-level: compute a single SHA-256 chain link. You probably don't need this dir
 
 The chain genesis sentinel: 64 hex zeros. Use this as the initial `chainHead` for a new chain.
 
+## Integrations
+
+### Evidence Engine
+
+`@stackbilt/evidence-core` produces content quality decisions; `audit-chain` makes them provable. Together they form a verifiable content governance trail.
+
+Evidence Engine does not just score content — it creates a verifiable trail of how content earned publish approval.
+
+#### Usage Example
+
+```typescript
+import { validateEvidence } from '@stackbilt/evidence-core';
+import { toAuditPayload } from '@stackbilt/evidence-core/audit';
+import { writeRecord, getChainHead } from '@stackbilt/audit-chain';
+
+const result = validateEvidence(content, { policyVersion: 'google_march_2024_core' });
+const record = toAuditPayload(result, {
+  contentId,
+  namespace: `tenant:${tenantId}:content:${contentId}`,
+  contentHash: sha256(content),
+});
+const chainHead = await getChainHead(bindings, record.namespace);
+await writeRecord(bindings, { ...record, chainHead });
+```
+
+#### Canonical Event Types
+
+Evidence domain events for use in `event_type`:
+
+- `evidence.validation.completed` — emitted by `toAuditPayload()` after validation runs
+- `evidence.assets.merged` — emitted by `toAssetsAuditPayload()` when asset groups merge
+- `evidence.validation.started` — consumer workflow: validation phase begins
+- `evidence.gaps.detected` — consumer workflow: missing signals identified
+- `evidence.redraft.completed` — consumer workflow: content revision finished
+- `evidence.approval.granted` — consumer workflow: human or policy approves publish
+- `evidence.publish.allowed` — consumer workflow: all gates clear, publish is permitted
+- `evidence.publish.blocked` — consumer workflow: one or more gates failed
+
+#### Canonical Namespace Patterns
+
+Recommended namespace patterns for evidence trails:
+
+- `content:{contentId}` — single piece of content
+- `site:{siteId}:content:{contentId}` — content scoped to a site
+- `tenant:{tenantId}:content:{contentId}` — multi-tenant organization
+
+No direct dependency between the packages — consumers wire them at the application layer. See `audit-chain#2` for full event namespace specification.
+
 ## D1 Schema
 
 ```sql
