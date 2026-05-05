@@ -225,6 +225,12 @@ Recommended namespace patterns for evidence trails:
 
 No direct dependency between the packages — consumers wire them at the application layer. See `audit-chain#2` for full event namespace specification.
 
+## Examples
+
+| Example | Description |
+|---|---|
+| [`examples/evidence-engine/`](examples/evidence-engine/) | Cloudflare Worker wiring audit-chain with `@stackbilt/evidence-core` for provable content governance |
+
 ## D1 Schema
 
 ```sql
