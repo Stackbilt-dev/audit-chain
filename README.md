@@ -27,7 +27,7 @@ Record 1                Record 2                Record 3
 hash_N = SHA-256(prev_hash_bytes + JSON.stringify(record_data_bytes))
 ```
 
-The genesis hash is 64 hex zeros (`000...000`). Each subsequent hash chains to the previous one. Verification walks the chain and recomputes every hash.
+The genesis hash is 64 hex zeros (`000...000`). Each subsequent hash chains to the previous one. Verification recomputes every hash and confirms that the records form one connected, unbranched path from genesis to the terminal head.
 
 ## Quick Start
 
@@ -94,7 +94,9 @@ chainHead = newChainHead;  // Persist this for the next write
 ```typescript
 import { verifyChain } from '@stackbilt/audit-chain';
 
-const result = await verifyChain(bindings, 'orders');
+const result = await verifyChain(bindings, 'orders', {
+  expectedChainHead: chainHead,
+});
 
 if (!result.valid) {
   console.error(`Chain broken at record ${result.broken_at}: ${result.error}`);
@@ -136,7 +138,14 @@ Throws if R2 or D1 writes fail. **If audit write fails, the audited action must 
 
 ### `verifyChain(bindings, namespace)`
 
-Verify the hash chain integrity for an entire namespace. Walks every record in timestamp order and recomputes each hash.
+Verify the hash chain integrity for an entire namespace. Recomputes each hash, confirms that exactly one record starts at `GENESIS_HASH`, confirms that every non-genesis `prev_hash` points to an existing record, and rejects branches where multiple records share the same previous hash.
+
+Optional third argument:
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `expectedChainHead` | `string` | Persisted terminal hash. Use this to detect tail truncation. |
+| `expectedRecordCount` | `number` | Persisted record count. Use this to detect missing or unexpected records. |
 
 Returns `VerificationResult`:
 - `valid: boolean` -- whether the chain is intact
@@ -255,13 +264,13 @@ CREATE INDEX IF NOT EXISTS idx_audit_ns_ts ON audit_index(namespace, timestamp);
 
 ## Chain Head Management
 
-This library does not manage the chain head for you. You must persist the `newChainHead` returned by `writeRecord()` and pass it back on the next write. Good options:
+This library does not manage the chain head for you. You must persist the `newChainHead` returned by `writeRecord()` and pass it back on the next write. Appends for a namespace must be serialized by the caller; two writers that read the same head and append concurrently can create a branch. Good options:
 
 - **Durable Object storage** -- single-writer guarantee, no race conditions (recommended)
 - **KV** -- works if writes are serialized
 - **D1 row** -- query the latest hash from the index as fallback
 
-If you lose the chain head, you can reconstruct it by reading the most recent record from R2 and using its hash.
+If you lose the chain head, you can reconstruct it by reading the most recent record from R2 and using its hash. Pass the persisted head to `verifyChain()` as `expectedChainHead` when you need verification to detect a missing tail record.
 
 ## Design Principles
 

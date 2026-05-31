@@ -62,6 +62,16 @@ export interface VerificationResult {
 }
 
 /**
+ * Optional anchors for verification against caller-managed chain state.
+ */
+export interface VerificationOptions {
+  /** Expected terminal hash. Use the persisted chain head to detect tail truncation. */
+  expectedChainHead?: string;
+  /** Expected number of records in the namespace. */
+  expectedRecordCount?: number;
+}
+
+/**
  * Options for querying the audit index.
  */
 export interface QueryOptions {

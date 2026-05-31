@@ -5,7 +5,12 @@
  * Uses the Web Crypto API — zero external dependencies.
  */
 
-import type { AuditRecord, AuditBindings, VerificationResult } from './types';
+import type {
+  AuditRecord,
+  AuditBindings,
+  VerificationOptions,
+  VerificationResult,
+} from './types';
 import { GENESIS_HASH } from './types';
 import { writeToR2, readFromR2, listByNamespace } from './storage';
 import { insertIndex } from './index-store';
@@ -117,23 +122,52 @@ export async function getRecords(
 /**
  * Verify the hash chain integrity for an entire namespace.
  *
- * Walks every record in timestamp order and recomputes each hash
- * from its prev_hash + serialized record data. If any computed hash
- * does not match the stored hash, the chain is broken.
+ * Recomputes each hash from its prev_hash + serialized record data,
+ * then verifies that the records form one connected, unbranched path
+ * from GENESIS_HASH to the terminal chain head.
  */
 export async function verifyChain(
   bindings: AuditBindings,
-  namespace: string
+  namespace: string,
+  opts: VerificationOptions = {}
 ): Promise<VerificationResult> {
   const records = await listByNamespace(bindings.AUDIT_BUCKET, namespace);
 
   if (records.length === 0) {
+    if (opts.expectedRecordCount !== undefined && opts.expectedRecordCount !== 0) {
+      return {
+        valid: false,
+        record_count: 0,
+        error: `Record count mismatch: expected ${opts.expectedRecordCount}, got 0`,
+      };
+    }
+    if (
+      opts.expectedChainHead !== undefined &&
+      opts.expectedChainHead !== GENESIS_HASH
+    ) {
+      return {
+        valid: false,
+        record_count: 0,
+        error: `Chain head mismatch: expected ${opts.expectedChainHead}, got ${GENESIS_HASH}`,
+      };
+    }
     return { valid: true, record_count: 0 };
   }
 
   const encoder = new TextEncoder();
+  const recordsByHash = new Map<string, AuditRecord>();
 
   for (const record of records) {
+    if (recordsByHash.has(record.hash)) {
+      return {
+        valid: false,
+        record_count: records.length,
+        broken_at: record.record_id,
+        error: `Duplicate hash at record ${record.record_id}: ${record.hash}`,
+      };
+    }
+    recordsByHash.set(record.hash, record);
+
     // Rebuild record data without the hash field
     const recordData: Record<string, unknown> = {
       record_id: record.record_id,
@@ -159,6 +193,103 @@ export async function verifyChain(
         error: `Hash mismatch at record ${record.record_id}: expected ${expectedHash}, got ${record.hash}`,
       };
     }
+  }
+
+  let genesisRecord: AuditRecord | undefined;
+  const childByPrevHash = new Map<string, AuditRecord>();
+
+  for (const record of records) {
+    if (record.prev_hash === GENESIS_HASH) {
+      if (genesisRecord) {
+        return {
+          valid: false,
+          record_count: records.length,
+          broken_at: record.record_id,
+          error: `Multiple genesis records: ${genesisRecord.record_id} and ${record.record_id}`,
+        };
+      }
+      genesisRecord = record;
+    } else if (!recordsByHash.has(record.prev_hash)) {
+      return {
+        valid: false,
+        record_count: records.length,
+        broken_at: record.record_id,
+        error: `Missing previous record for ${record.record_id}: prev_hash ${record.prev_hash} was not found`,
+      };
+    }
+
+    const existingChild = childByPrevHash.get(record.prev_hash);
+    if (existingChild) {
+      return {
+        valid: false,
+        record_count: records.length,
+        broken_at: record.record_id,
+        error: `Branch detected at prev_hash ${record.prev_hash}: records ${existingChild.record_id} and ${record.record_id}`,
+      };
+    }
+    childByPrevHash.set(record.prev_hash, record);
+  }
+
+  if (!genesisRecord) {
+    return {
+      valid: false,
+      record_count: records.length,
+      broken_at: records[0].record_id,
+      error: 'Missing genesis record',
+    };
+  }
+
+  const visitedHashes = new Set<string>();
+  let current: AuditRecord | undefined = genesisRecord;
+  let terminalRecord = genesisRecord;
+
+  while (current) {
+    if (visitedHashes.has(current.hash)) {
+      return {
+        valid: false,
+        record_count: records.length,
+        broken_at: current.record_id,
+        error: `Cycle detected at record ${current.record_id}`,
+      };
+    }
+
+    visitedHashes.add(current.hash);
+    terminalRecord = current;
+    current = childByPrevHash.get(current.hash);
+  }
+
+  if (visitedHashes.size !== records.length) {
+    const disconnected = records.find((record) => !visitedHashes.has(record.hash));
+    return {
+      valid: false,
+      record_count: records.length,
+      broken_at: disconnected?.record_id,
+      error: 'Disconnected chain segment detected',
+    };
+  }
+
+  if (
+    opts.expectedRecordCount !== undefined &&
+    opts.expectedRecordCount !== records.length
+  ) {
+    return {
+      valid: false,
+      record_count: records.length,
+      broken_at: terminalRecord.record_id,
+      error: `Record count mismatch: expected ${opts.expectedRecordCount}, got ${records.length}`,
+    };
+  }
+
+  if (
+    opts.expectedChainHead !== undefined &&
+    opts.expectedChainHead !== terminalRecord.hash
+  ) {
+    return {
+      valid: false,
+      record_count: records.length,
+      broken_at: terminalRecord.record_id,
+      error: `Chain head mismatch: expected ${opts.expectedChainHead}, got ${terminalRecord.hash}`,
+    };
   }
 
   return { valid: true, record_count: records.length };

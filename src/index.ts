@@ -15,6 +15,7 @@ export { queryIndex } from './index-store';
 export type {
   AuditRecord,
   ChainHead,
+  VerificationOptions,
   VerificationResult,
   QueryOptions,
   AuditIndexRow,

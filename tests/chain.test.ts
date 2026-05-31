@@ -6,6 +6,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { computeHash, writeRecord, getRecord, getRecords, verifyChain } from '../src/chain';
+import type { VerificationOptions } from '../src/index';
 import { GENESIS_HASH } from '../src/types';
 import type { AuditBindings, AuditRecord, R2Bucket, D1Database } from '../src/types';
 
@@ -460,6 +461,122 @@ describe('verifyChain', () => {
     const result = await verifyChain(bindings, 'ns');
     expect(result.valid).toBe(true);
     expect(result.record_count).toBe(3);
+  });
+
+  it('detects a self-consistent branch with two records sharing a previous hash', async () => {
+    const { newChainHead: h1 } = await writeRecord(bindings, {
+      namespace: 'ns',
+      chainHead: GENESIS_HASH,
+      event_type: 'root',
+      actor: 'bot',
+      payload: {},
+    });
+
+    await new Promise((r) => setTimeout(r, 5));
+
+    await writeRecord(bindings, {
+      namespace: 'ns',
+      chainHead: h1,
+      event_type: 'main',
+      actor: 'bot',
+      payload: {},
+    });
+
+    await new Promise((r) => setTimeout(r, 5));
+
+    const { record: branched } = await writeRecord(bindings, {
+      namespace: 'ns',
+      chainHead: h1,
+      event_type: 'branch',
+      actor: 'bot',
+      payload: {},
+    });
+
+    const result = await verifyChain(bindings, 'ns');
+    expect(result.valid).toBe(false);
+    expect(result.broken_at).toBe(branched.record_id);
+    expect(result.error).toContain('Branch detected');
+  });
+
+  it('detects a chain that starts without the genesis hash', async () => {
+    const { record } = await writeRecord(bindings, {
+      namespace: 'ns',
+      chainHead: 'f'.repeat(64),
+      event_type: 'orphan',
+      actor: 'bot',
+      payload: {},
+    });
+
+    const result = await verifyChain(bindings, 'ns');
+    expect(result.valid).toBe(false);
+    expect(result.broken_at).toBe(record.record_id);
+    expect(result.error).toContain('Missing previous record');
+  });
+
+  it('detects multiple genesis records in one namespace', async () => {
+    await writeRecord(bindings, {
+      namespace: 'ns',
+      chainHead: GENESIS_HASH,
+      event_type: 'first',
+      actor: 'bot',
+      payload: {},
+    });
+
+    await new Promise((r) => setTimeout(r, 5));
+
+    const { record: secondGenesis } = await writeRecord(bindings, {
+      namespace: 'ns',
+      chainHead: GENESIS_HASH,
+      event_type: 'second',
+      actor: 'bot',
+      payload: {},
+    });
+
+    const result = await verifyChain(bindings, 'ns');
+    expect(result.valid).toBe(false);
+    expect(result.broken_at).toBe(secondGenesis.record_id);
+    expect(result.error).toContain('Multiple genesis records');
+  });
+
+  it('detects tail truncation when the expected chain head is supplied', async () => {
+    const { newChainHead: h1 } = await writeRecord(bindings, {
+      namespace: 'ns',
+      chainHead: GENESIS_HASH,
+      event_type: 'a',
+      actor: 'bot',
+      payload: {},
+    });
+
+    await new Promise((r) => setTimeout(r, 5));
+
+    const { record: r2, newChainHead: h2 } = await writeRecord(bindings, {
+      namespace: 'ns',
+      chainHead: h1,
+      event_type: 'b',
+      actor: 'bot',
+      payload: {},
+    });
+
+    bindings._r2._store.delete(`audit/ns/${r2.record_id}.json`);
+
+    const opts: VerificationOptions = { expectedChainHead: h2 };
+    const result = await verifyChain(bindings, 'ns', opts);
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain('Chain head mismatch');
+  });
+
+  it('detects record count mismatches when an expected count is supplied', async () => {
+    await writeRecord(bindings, {
+      namespace: 'ns',
+      chainHead: GENESIS_HASH,
+      event_type: 'a',
+      actor: 'bot',
+      payload: {},
+    });
+
+    const result = await verifyChain(bindings, 'ns', { expectedRecordCount: 2 });
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain('Record count mismatch');
   });
 
   it('detects a tampered hash', async () => {
