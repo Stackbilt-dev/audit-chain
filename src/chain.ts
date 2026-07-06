@@ -10,10 +10,10 @@ import type {
   AuditBindings,
   VerificationOptions,
   VerificationResult,
-} from './types';
-import { GENESIS_HASH } from './types';
-import { writeToR2, readFromR2, listByNamespace } from './storage';
-import { insertIndex } from './index-store';
+} from './types.js';
+import { GENESIS_HASH } from './types.js';
+import { writeToR2, readFromR2, listByNamespace } from './storage.js';
+import { insertIndex } from './index-store.js';
 
 /**
  * Compute a SHA-256 chain link.

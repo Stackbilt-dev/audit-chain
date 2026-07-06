@@ -11,7 +11,7 @@ import type {
   AuditIndexRow,
   D1Database,
   QueryOptions,
-} from './types';
+} from './types.js';
 
 /** Maximum length for the payload_summary column. */
 const SUMMARY_MAX_LENGTH = 500;

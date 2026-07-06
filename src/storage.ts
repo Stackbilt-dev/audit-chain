@@ -5,7 +5,7 @@
  * Path format: audit/{namespace}/{recordId}.json
  */
 
-import type { AuditRecord, R2Bucket } from './types';
+import type { AuditRecord, R2Bucket } from './types.js';
 
 /**
  * Build the R2 key for a record.

@@ -6,10 +6,10 @@
  */
 
 // Core operations
-export { computeHash, writeRecord, getRecord, getRecords, verifyChain } from './chain';
+export { computeHash, writeRecord, getRecord, getRecords, verifyChain } from './chain.js';
 
 // Index queries
-export { queryIndex } from './index-store';
+export { queryIndex } from './index-store.js';
 
 // Types
 export type {
@@ -23,7 +23,7 @@ export type {
   R2Bucket,
   D1Database,
   D1PreparedStatement,
-} from './types';
+} from './types.js';
 
 // Constants
-export { GENESIS_HASH } from './types';
+export { GENESIS_HASH } from './types.js';
