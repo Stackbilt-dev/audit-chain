@@ -114,8 +114,12 @@ export interface R2Bucket {
     }
   ): Promise<unknown>;
   get(key: string): Promise<{ text(): Promise<string> } | null>;
-  list(options: { prefix: string }): Promise<{
+  list(options: { prefix: string; cursor?: string; limit?: number }): Promise<{
     objects: Array<{ key: string }>;
+    /** True when more keys remain beyond this page. */
+    truncated?: boolean;
+    /** Opaque cursor for the next page; set when `truncated` is true. */
+    cursor?: string;
   }>;
 }
 

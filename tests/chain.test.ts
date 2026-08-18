@@ -14,12 +14,25 @@ import type { AuditBindings, AuditRecord, R2Bucket, D1Database } from '../src/ty
 // Mock helpers
 // ---------------------------------------------------------------------------
 
-/** In-memory R2 mock that stores JSON strings keyed by path. */
-function createMockR2(): R2Bucket & { _store: Map<string, string> } {
+/**
+ * In-memory R2 mock that stores JSON strings keyed by path.
+ *
+ * `list()` paginates like the real R2 binding: at most `pageSize` keys per
+ * call (R2's own cap is 1000), with `truncated` and `cursor` set when more
+ * remain. A mock that returns every key in one page cannot catch unpaginated
+ * reads, so the page size is faithful by default and shrinkable for tests.
+ */
+function createMockR2(
+  pageSize = 1000
+): R2Bucket & { _store: Map<string, string>; readonly _listCalls: number } {
   const store = new Map<string, string>();
+  let listCalls = 0;
 
   return {
     _store: store,
+    get _listCalls() {
+      return listCalls;
+    },
     async put(key: string, value: string | ArrayBuffer | ReadableStream) {
       store.set(key, typeof value === 'string' ? value : '');
     },
@@ -28,11 +41,22 @@ function createMockR2(): R2Bucket & { _store: Map<string, string> } {
       if (!data) return null;
       return { text: async () => data };
     },
-    async list(options: { prefix: string }) {
-      const objects = [...store.keys()]
+    async list(options: { prefix: string; cursor?: string }) {
+      listCalls++;
+      const all = [...store.keys()]
         .filter((k) => k.startsWith(options.prefix))
-        .map((key) => ({ key }));
-      return { objects };
+        .sort();
+
+      const start = options.cursor ? Number(options.cursor) : 0;
+      const page = all.slice(start, start + pageSize);
+      const end = start + page.length;
+      const truncated = end < all.length;
+
+      return {
+        objects: page.map((key) => ({ key })),
+        truncated,
+        ...(truncated ? { cursor: String(end) } : {}),
+      };
     },
   };
 }
@@ -84,11 +108,11 @@ function createMockD1(): D1Database & { _rows: Record<string, unknown>[] } {
   };
 }
 
-function createBindings(): AuditBindings & {
+function createBindings(pageSize?: number): AuditBindings & {
   _r2: ReturnType<typeof createMockR2>;
   _d1: ReturnType<typeof createMockD1>;
 } {
-  const r2 = createMockR2();
+  const r2 = createMockR2(pageSize);
   const d1 = createMockD1();
   return {
     AUDIT_BUCKET: r2,
@@ -752,5 +776,73 @@ describe('round-trip integrity', () => {
     const expectedHash = await computeHash(record.prev_hash, recordBytes);
 
     expect(record.hash).toBe(expectedHash);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// R2 list pagination
+// ---------------------------------------------------------------------------
+
+describe('R2 list pagination', () => {
+  /** Append `count` records to a namespace, threading the chain head. */
+  async function appendRecords(
+    bindings: ReturnType<typeof createBindings>,
+    namespace: string,
+    count: number
+  ): Promise<string> {
+    let chainHead = GENESIS_HASH;
+    for (let i = 0; i < count; i++) {
+      const { newChainHead } = await writeRecord(bindings, {
+        namespace,
+        chainHead,
+        event_type: 'test.event',
+        actor: 'tester',
+        payload: { i },
+      });
+      chainHead = newChainHead;
+    }
+    return chainHead;
+  }
+
+  it('getRecords returns every record across multiple pages', async () => {
+    const bindings = createBindings(3);
+    await appendRecords(bindings, 'paged', 7);
+
+    const records = await getRecords(bindings, 'paged');
+
+    expect(records).toHaveLength(7);
+    expect(bindings._r2._listCalls).toBe(3);
+  });
+
+  it('verifyChain stays valid across a pagination boundary', async () => {
+    const bindings = createBindings(3);
+    const chainHead = await appendRecords(bindings, 'paged', 7);
+
+    const result = await verifyChain(bindings, 'paged', {
+      expectedChainHead: chainHead,
+      expectedRecordCount: 7,
+    });
+
+    expect(result.valid).toBe(true);
+    expect(result.record_count).toBe(7);
+  });
+
+  it('does not truncate a chain at the R2 1000-key list cap', async () => {
+    // Regression: a single unpaginated list() returned only the first 1000
+    // keys, so the 1001st record vanished and verification ran against a
+    // partial chain -- reporting either a bogus break or a false-clean pass.
+    const bindings = createBindings();
+    const chainHead = await appendRecords(bindings, 'big', 1001);
+
+    const records = await getRecords(bindings, 'big');
+    expect(records).toHaveLength(1001);
+
+    const result = await verifyChain(bindings, 'big', {
+      expectedChainHead: chainHead,
+      expectedRecordCount: 1001,
+    });
+
+    expect(result.valid).toBe(true);
+    expect(result.record_count).toBe(1001);
   });
 });
