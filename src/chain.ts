@@ -10,10 +10,10 @@ import type {
   AuditBindings,
   VerificationOptions,
   VerificationResult,
-} from './types';
-import { GENESIS_HASH } from './types';
-import { writeToR2, readFromR2, listByNamespace } from './storage';
-import { insertIndex } from './index-store';
+} from './types.js';
+import { GENESIS_HASH } from './types.js';
+import { writeToR2, readFromR2, listByNamespace } from './storage.js';
+import { insertIndex } from './index-store.js';
 
 /**
  * Compute a SHA-256 chain link.
@@ -42,7 +42,7 @@ export async function computeHash(
  *
  * 1. Builds the record (without hash)
  * 2. Serializes and computes the chain hash
- * 3. Writes the full record to R2 (immutable source of truth)
+ * 3. Writes the full record to R2 (durable source of truth)
  * 4. Indexes a summary row in D1
  *
  * Returns the complete record and the new chain head hash.
@@ -89,7 +89,7 @@ export async function writeRecord(
     hash,
   };
 
-  // 1. Write to R2 (immutable source of truth)
+  // 1. Write to R2 (durable source of truth)
   await writeToR2(bindings.AUDIT_BUCKET, opts.namespace, record);
 
   // 2. Index in D1

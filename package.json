@@ -1,7 +1,7 @@
 {
   "name": "@stackbilt/audit-chain",
   "version": "0.1.1",
-  "description": "Tamper-evident audit trail for Cloudflare Workers. SHA-256 hash chaining with R2 immutability and D1 indexing.",
+  "description": "Tamper-evident audit trail for Cloudflare Workers. SHA-256 hash chaining with R2 durable storage and D1 indexing.",
   "author": "Kurt Overmier <kurt@stackbilt.dev>",
   "license": "Apache-2.0",
   "repository": {

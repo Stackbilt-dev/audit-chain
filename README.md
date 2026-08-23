@@ -2,17 +2,17 @@
 
 Tamper-evident audit trail for Cloudflare Workers in under 200 lines of core logic.
 
-SHA-256 hash chaining with R2 immutability and D1 indexing. Zero production dependencies -- uses only the Web Crypto API and Cloudflare bindings.
+SHA-256 hash chaining with R2 durable storage and D1 indexing. Zero production dependencies -- uses only the Web Crypto API and Cloudflare bindings.
 
 ## Why Hash Chaining
 
 Every audit record includes a SHA-256 hash computed from the previous record's hash concatenated with the current record's content. This means:
 
-- **Tamper detection** -- modifying or deleting any record breaks the chain from that point forward.
+- **Tamper detection** -- modifying a record or deleting an interior record breaks chain verification. Persisted head/count anchors detect tail truncation.
 - **Forensic integrity** -- the chain can be independently verified at any time.
-- **Compliance** -- provides a cryptographic proof of record ordering and completeness.
+- **Forensic evidence** -- proves record ordering and, when verified against caller-managed head/count anchors, completeness.
 
-R2 is the immutable source of truth. D1 is a searchable index. If D1 is wiped, the chain in R2 remains intact and verifiable.
+R2 is the durable source of truth. D1 is a searchable index. If D1 is wiped, the chain in R2 remains intact and verifiable. Configure an R2 bucket lock when records must also be protected from overwrite or deletion for a retention period.
 
 ## How It Works
 
@@ -239,6 +239,7 @@ No direct dependency between the packages — consumers wire them at the applica
 | Example | Description |
 |---|---|
 | [`examples/evidence-engine/`](examples/evidence-engine/) | Cloudflare Worker wiring audit-chain with `@stackbilt/evidence-core` for provable content governance |
+| [`examples/evaluation-receipt/`](examples/evaluation-receipt/) | Verify an `@stackbilt/evals` EvaluationReceipt and seal its public-safe aggregate in a one-record audit namespace |
 
 ## D1 Schema
 
@@ -275,6 +276,7 @@ If you lose the chain head, you can reconstruct it by reading the most recent re
 ## Design Principles
 
 - **R2 is truth, D1 is convenience.** If they diverge, R2 wins.
+- **Tamper evidence is not retention.** Use an R2 bucket lock when stored records must be protected from overwrite or deletion.
 - **Append-only.** There is no update or delete operation.
 - **Fail loud.** If the audit write fails, the caller is expected to abort the audited operation.
 - **Namespace isolation.** Multiple independent chains can coexist in the same R2 bucket and D1 table.

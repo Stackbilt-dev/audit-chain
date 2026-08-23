@@ -1,11 +1,12 @@
 /**
  * R2 storage adapter.
  *
- * R2 is the immutable source of truth for audit records.
+ * R2 is the durable source of truth for audit records. Storage-level retention
+ * requires a bucket lock configured by the consumer.
  * Path format: audit/{namespace}/{recordId}.json
  */
 
-import type { AuditRecord, R2Bucket } from './types';
+import type { AuditRecord, R2Bucket } from './types.js';
 
 /**
  * Build the R2 key for a record.
