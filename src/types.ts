@@ -11,7 +11,7 @@
 export const GENESIS_HASH = '0'.repeat(64);
 
 /**
- * An immutable audit record. Written to R2 as the source of truth,
+ * An append-only audit record. Written to R2 as the source of truth,
  * indexed in D1 for queryability.
  *
  * The `hash` field is SHA-256(prev_hash_bytes + serialized_record_bytes),
@@ -136,7 +136,7 @@ export interface D1PreparedStatement {
  * Bindings required by audit-chain.
  */
 export interface AuditBindings {
-  /** R2 bucket for immutable record storage. */
+  /** R2 bucket for record storage. Configure bucket locks for retention enforcement. */
   AUDIT_BUCKET: R2Bucket;
   /** D1 database for the searchable index. */
   AUDIT_DB: D1Database;
