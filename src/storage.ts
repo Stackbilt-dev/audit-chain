@@ -52,22 +52,35 @@ export async function readFromR2(
 
 /**
  * List all records in a namespace from R2, sorted by timestamp ascending.
+ *
+ * R2 `list()` returns at most 1000 keys per call and signals more with
+ * `truncated`/`cursor`. This walks every page: a single unpaginated call
+ * silently drops each record past the first page, leaving `verifyChain()`
+ * to run against a partial chain.
  */
 export async function listByNamespace(
   bucket: R2Bucket,
   namespace: string
 ): Promise<AuditRecord[]> {
   const prefix = `audit/${namespace}/`;
-  const listed = await bucket.list({ prefix });
 
   const records: AuditRecord[] = [];
-  for (const object of listed.objects) {
-    const obj = await bucket.get(object.key);
-    if (obj) {
-      const text = await obj.text();
-      records.push(JSON.parse(text) as AuditRecord);
+  let cursor: string | undefined;
+
+  do {
+    const listed = await bucket.list(cursor ? { prefix, cursor } : { prefix });
+
+    for (const object of listed.objects) {
+      const obj = await bucket.get(object.key);
+      if (obj) {
+        const text = await obj.text();
+        records.push(JSON.parse(text) as AuditRecord);
+      }
     }
-  }
+
+    // A truncated page without a cursor would loop forever; treat it as the end.
+    cursor = listed.truncated ? listed.cursor : undefined;
+  } while (cursor);
 
   records.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
   return records;
